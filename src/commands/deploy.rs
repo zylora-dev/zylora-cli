@@ -169,39 +169,32 @@ fn resolve_function<'a>(
 
 /// Bundle the current project directory into a tar.gz byte vector.
 fn bundle_project() -> Result<Vec<u8>> {
-    use sha2::{Digest, Sha256};
+    use flate2::write::GzEncoder;
+    use flate2::Compression;
 
     let cwd = std::env::current_dir()?;
     let ignore_patterns = load_ignore_patterns(&cwd);
 
-    // Simple file manifest for initial version — production would use tar.gz
-    let mut files: Vec<serde_json::Value> = Vec::new();
+    let mut buf = Vec::new();
+    {
+        let encoder = GzEncoder::new(&mut buf, Compression::fast());
+        let mut archive = tar::Builder::new(encoder);
 
-    collect_files(&cwd, &cwd, &ignore_patterns, &mut files)?;
+        add_files_to_tar(&cwd, &cwd, &ignore_patterns, &mut archive)?;
 
-    let manifest = serde_json::json!({
-        "files": files,
-    });
+        let encoder = archive.into_inner()?;
+        encoder.finish()?;
+    }
 
-    // For the initial version, send the file listing as JSON.
-    // The actual file upload will use multipart with individual files.
-    // This is a simplified bundle — production would use tar.gz.
-    let archive = serde_json::to_vec(&manifest)?;
-
-    // Log bundle size
-    let mut hasher = Sha256::new();
-    hasher.update(&archive);
-    let _hash = hasher.finalize();
-
-    Ok(archive)
+    Ok(buf)
 }
 
-/// Collect files respecting .zyloraignore patterns.
-fn collect_files(
+/// Recursively add files to the tar archive, respecting ignore patterns.
+fn add_files_to_tar(
     base: &std::path::Path,
     dir: &std::path::Path,
     ignores: &[String],
-    files: &mut Vec<serde_json::Value>,
+    archive: &mut tar::Builder<flate2::write::GzEncoder<&mut Vec<u8>>>,
 ) -> Result<()> {
     for entry in std::fs::read_dir(dir)? {
         let entry = entry?;
@@ -212,18 +205,16 @@ fn collect_files(
             .to_string_lossy()
             .replace('\\', "/");
 
-        // Skip ignored patterns
         if should_ignore(&relative, ignores) {
             continue;
         }
 
         if path.is_dir() {
-            collect_files(base, &path, ignores, files)?;
-        } else if let Ok(metadata) = path.metadata() {
-            files.push(serde_json::json!({
-                "path": relative,
-                "size": metadata.len(),
-            }));
+            add_files_to_tar(base, &path, ignores, archive)?;
+        } else {
+            archive
+                .append_path_with_name(&path, &relative)
+                .with_context(|| format!("Failed to add {relative} to archive"))?;
         }
     }
     Ok(())

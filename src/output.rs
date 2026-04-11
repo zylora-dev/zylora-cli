@@ -28,8 +28,7 @@ pub fn print_list<T: Serialize + Tabled>(items: &[T], format: OutputFormat) -> R
             println!("{}", serde_json::to_string_pretty(items)?);
         }
         OutputFormat::Yaml => {
-            // Serialize as JSON then print (no yaml dep — keep it simple)
-            println!("{}", serde_json::to_string_pretty(items)?);
+            println!("{}", serde_yaml::to_string(items)?);
         }
     }
     Ok(())
@@ -45,7 +44,7 @@ pub fn print_item<T: Serialize + std::fmt::Display>(item: &T, format: OutputForm
             println!("{}", serde_json::to_string_pretty(item)?);
         }
         OutputFormat::Yaml => {
-            println!("{}", serde_json::to_string_pretty(item)?);
+            println!("{}", serde_yaml::to_string(item)?);
         }
     }
     Ok(())
@@ -54,8 +53,11 @@ pub fn print_item<T: Serialize + std::fmt::Display>(item: &T, format: OutputForm
 /// Print a raw JSON value in the requested format.
 pub fn print_json(value: &serde_json::Value, format: OutputFormat) -> Result<()> {
     match format {
-        OutputFormat::Json | OutputFormat::Yaml => {
+        OutputFormat::Json => {
             println!("{}", serde_json::to_string_pretty(value)?);
+        }
+        OutputFormat::Yaml => {
+            println!("{}", serde_yaml::to_string(value)?);
         }
         OutputFormat::Table => {
             // Best-effort pretty print for table mode

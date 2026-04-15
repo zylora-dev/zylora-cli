@@ -29,10 +29,12 @@ pub struct DeployArgs {
 
 #[derive(Debug, Deserialize, serde::Serialize)]
 struct DeployResponse {
+    #[serde(rename = "id")]
     deployment_id: String,
     function_id: String,
-    version: u32,
+    version: i32,
     status: String,
+    #[serde(default)]
     endpoint: Option<String>,
 }
 

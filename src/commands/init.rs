@@ -37,7 +37,7 @@ pub async fn run(args: InitArgs) -> Result<()> {
     let python_version = detect_python_version();
     let runtime = python_version
         .as_ref()
-        .map(|v| format!("python{v}"))
+        .map(|v| clamp_runtime(v))
         .unwrap_or_else(|| "python312".into());
 
     // Generate zylora.toml
@@ -92,17 +92,36 @@ build/
     println!("  1. Edit your function code");
     println!("  2. Run `zy deploy` to deploy");
 
-    if let Some(version) = python_version {
-        println!(
-            "{}",
-            style::dim(&format!(
-                "  Detected Python {}",
-                version
-            ))
-        );
+    if let Some(version) = &python_version {
+        let msg = if runtime == format!("python{version}") || runtime == format!("python3.{}", version.split('.').nth(1).unwrap_or("")) {
+            format!("  Detected Python {version}")
+        } else {
+            format!("  Detected Python {version} → using runtime {runtime} (latest supported)")
+        };
+        println!("{}", style::dim(&msg));
     }
 
     Ok(())
+}
+
+/// Map a detected Python version string ("3.12", "3.14", …) to the closest
+/// supported Zylora runtime identifier. Versions newer than the latest
+/// supported runtime are clamped down to avoid a 400 from the engine.
+fn clamp_runtime(version: &str) -> String {
+    const SUPPORTED: &[(&str, &str)] = &[
+        ("3.10", "python310"),
+        ("3.11", "python311"),
+        ("3.12", "python312"),
+        ("3.13", "python313"),
+    ];
+    // Exact match first
+    for (v, rt) in SUPPORTED {
+        if version == *v {
+            return rt.to_string();
+        }
+    }
+    // Unknown / future version — clamp to latest supported
+    "python313".to_string()
 }
 
 /// Try to detect the Python version in the current environment.

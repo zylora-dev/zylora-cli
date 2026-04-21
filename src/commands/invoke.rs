@@ -46,9 +46,17 @@ pub struct LogsArgs {
 
 #[derive(Debug, Deserialize, serde::Serialize)]
 struct InvokeResponse {
-    result: serde_json::Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    invocation_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    status: Option<String>,
+    output: serde_json::Value,
     duration_ms: Option<u64>,
     cost_cents: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    gpu_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cold_start: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, serde::Serialize)]
@@ -86,15 +94,17 @@ pub async fn run(args: InvokeArgs, format: OutputFormat) -> Result<()> {
 
     match format {
         OutputFormat::Table => {
-            println!("{}", serde_json::to_string_pretty(&resp.result)?);
+            println!("{}", serde_json::to_string_pretty(&resp.output)?);
             if let Some(ms) = resp.duration_ms {
+                let cold = if resp.cold_start.unwrap_or(false) { " | cold start" } else { "" };
                 println!(
                     "{}",
                     style::dim(&format!(
-                        "Duration: {ms}ms | Cost: {}",
+                        "Duration: {ms}ms | Cost: {}{}",
                         resp.cost_cents
                             .map(style::format_credits)
-                            .unwrap_or_else(|| "—".into())
+                            .unwrap_or_else(|| "—".into()),
+                        cold,
                     ))
                 );
             }

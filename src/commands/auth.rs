@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
 use serde::Deserialize;
+use tokio::io::AsyncWriteExt;
 
 use crate::client::ApiClient;
 use crate::config;
@@ -29,8 +30,14 @@ pub async fn login() -> Result<()> {
     let spinner = style::spinner();
     spinner.set_message("Waiting for authentication...");
 
-    // Accept one connection — the callback from the browser
-    let (stream, _) = listener.accept().await.context("Callback connection failed")?;
+    // Accept one connection — the callback from the browser (5-minute timeout)
+    let (stream, _) = tokio::time::timeout(
+        std::time::Duration::from_secs(300),
+        listener.accept(),
+    )
+    .await
+    .context("Authentication timed out after 5 minutes")?
+    .context("Callback connection failed")?;
     spinner.finish_and_clear();
 
     // Read the HTTP request
@@ -50,10 +57,11 @@ pub async fn login() -> Result<()> {
         .context("No token received in callback")?;
 
     // Send HTTP response to browser
-    let response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n\
+    let response = b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n\
         <html><body><h2>Authenticated!</h2><p>You can close this tab and return to the terminal.</p></body></html>";
     stream.writable().await?;
-    let _ = stream.try_write(response.as_bytes());
+    let mut stream = stream;
+    stream.write_all(response).await.ok(); // best-effort — do not fail login if write fails
 
     // Validate the token by calling whoami
     let client = ApiClient::new(token.clone())?;
